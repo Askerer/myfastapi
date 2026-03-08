@@ -1,0 +1,26 @@
+# Environment
+.venv/
+venv/
+env/
+.env
+
+# __pycache__
+__pycache__/
+*.py[cod]
+*$py.class
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# MacOS
+.DS_Store
+
+# Logs
+*.log
+
+# Project specific
+test_ocr.png
+output/

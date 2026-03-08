@@ -1,0 +1,8 @@
+打開 IIS 管理員。
+左側點選「應用程式集區 (Application Pools)」。
+找到你架設這個 API 所使用的應用程式集區（通常跟你站台名字一樣，或者是 DefaultAppPool）。
+在它上面按右鍵 ➡️ 進階設定 (Advanced Settings)。
+找到「識別 (Identity)」，點擊旁邊的 ... 按鈕。
+選擇「自訂帳戶 (Custom account)」，按「設定 (Set...)」。
+輸入你登入這台 Windows 的帳號密碼（帳號通常是 ）。
+一路按確定。重新啟動站台，這樣馬上就能成功了！
