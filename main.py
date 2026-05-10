@@ -59,37 +59,16 @@ ALLOWED_CONTENT_TYPES = {
 }
 
 
-@app.post("/ocr")
-async def ocr_recognize(file: UploadFile = File(...)):
-    """
-    接收一張圖片，回傳辨識出的文字與座標。
-
-    回傳格式:
-    ```json
-    {
-      "filename": "example.png",
-      "elapsed_ms": 123.45,
-      "results": [
-        {
-          "text": "辨識文字",
-          "confidence": 0.98,
-          "polygon": [[x1,y1],[x2,y2],[x3,y3],[x4,y4]]
-        }
-      ]
-    }
-    ```
-    """
-    # ── 驗證檔案類型 ──
+async def _perform_ocr(file: UploadFile):
+    """內部輔助函數：執行 OCR 並回傳原始結果與耗時。"""
     if file.content_type not in ALLOWED_CONTENT_TYPES:
         raise HTTPException(
             status_code=400,
             detail=f"不支援的圖片格式: {file.content_type}，請上傳 png/jpeg/bmp/webp/tiff",
         )
 
-    # ── 讀取圖片並存為暫存檔（PaddleOCR 3.x predict 接受路徑） ──
     try:
         contents = await file.read()
-        # 寫入暫存檔，因為 PaddleOCR 3.x 的 predict 對檔案路徑支援最穩定
         suffix = os.path.splitext(file.filename or "img.png")[1] or ".png"
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
             tmp.write(contents)
@@ -97,18 +76,21 @@ async def ocr_recognize(file: UploadFile = File(...)):
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"無法讀取圖片: {e}")
 
-    # ── 執行 OCR（PaddleOCR 3.x API）──
     try:
         start = time.perf_counter()
         results = ocr_engine.predict(input=tmp_path)
         elapsed_ms = (time.perf_counter() - start) * 1000
+        return results, elapsed_ms
     finally:
-        # 清理暫存檔
-        os.unlink(tmp_path)
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
 
-    # ── 整理結果 ──
-    # PaddleOCR 3.x 回傳 list[OCRResult]
-    # OCRResult 是 dict-like，包含 rec_texts, rec_scores, rec_polys, dt_polys
+
+@app.post("/ocr")
+async def ocr_recognize(file: UploadFile = File(...)):
+    """回傳詳細的 OCR 結果（含座標）。"""
+    results, elapsed_ms = await _perform_ocr(file)
+
     items = []
     for res in results:
         rec_texts = res.get("rec_texts", [])
@@ -116,7 +98,6 @@ async def ocr_recognize(file: UploadFile = File(...)):
         rec_polys = res.get("rec_polys", [])
 
         for text, score, poly in zip(rec_texts, rec_scores, rec_polys):
-            # poly 可能是 np.ndarray，轉換成 list
             if hasattr(poly, "tolist"):
                 poly = poly.tolist()
             items.append(
@@ -136,6 +117,27 @@ async def ocr_recognize(file: UploadFile = File(...)):
     )
 
 
+@app.post("/ocr/text")
+async def ocr_text_only(file: UploadFile = File(...)):
+    """僅回傳辨識出的完整字串。"""
+    results, elapsed_ms = await _perform_ocr(file)
+
+    all_texts = []
+    for res in results:
+        all_texts.extend(res.get("rec_texts", []))
+
+    # 使用空格或換行合併文字，這裡選擇換行
+    full_text = "\n".join(all_texts)
+
+    return JSONResponse(
+        content={
+            "filename": file.filename,
+            "elapsed_ms": round(elapsed_ms, 2),
+            "text": full_text,
+        }
+    )
+
+
 @app.get("/health")
 async def health():
     return {"status": "ok", "model_loaded": ocr_engine is not None}
@@ -144,4 +146,4 @@ async def health():
 if __name__ == "__main__":
     import uvicorn
 
-    # uvicorn.run("main:app", host="127.0.0.1", port=8088, reload=True)
+    #uvicorn.run("main:app", host="127.0.0.1", port=8088, reload=True)
